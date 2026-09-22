@@ -8,12 +8,12 @@ from typing import List
 
 
 router = APIRouter(
-    prefix="/listar/productos",
-    tags=["Productos"] # Esto organiza la documentación de Swagger
+    #prefix="/listar/productos",
+    #tags=["Productos"] # Esto organiza la documentación de Swagger
 )
 
 
-@router.get("",response_model=List[ProductosRequest])
+@router.get("/listar/productos",response_model=List[ProductosRequest])
 def listar_productos(db:Session=Depends(get_bd)):
     return ProductosRepository.find_all(db)
 
