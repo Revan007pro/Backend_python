@@ -1,10 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base,sessionmaker
 
-# Nota los dos puntos antes de 3306 y la barra "/" después
 DATABASE =  "mysql+pymysql://usuario:user1@localhost:3306/tienda_virtual"
 
-motor=create_engine(DATABASE)
+motor=create_engine(DATABASE,echo=True)
 
 session_local=sessionmaker(autocommit=False, autoflush=False,bind=motor)
 Base=declarative_base() #constuctor para poder crear n cantidad de objetos
