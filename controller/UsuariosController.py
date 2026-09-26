@@ -1,115 +1,113 @@
-from fastapi import APIRouter,Depends,status,HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from database import get_bd
 from repository.UsuariosRepository import UsuariosRepository
 from entities.usuarios import Usuarios
 from dto.UsuariosRequest import UsuariosRequest
-from dto.CambiarContrasenia import CambiarContrasenia #as change
+from dto.CambiarContrasenia import CambiarContrasenia
 from typing import List
 from controller.SecurityController import SecurityController
 from dto.CrearUsuario import CrearUsuario
 
-
-router = APIRouter(
-    #prefix=,
-    #tags=["users"] # Esto organiza la documentación de Swagger
-)
+router = APIRouter()
 
 
 @router.get("/listar/usuarios",response_model=List[UsuariosRequest])
-def listar_usuarios(db:Session=Depends(get_bd)):
+def listar_usuarios(
+    db: Session = Depends(get_bd),
+    usuario_actual: Usuarios = Depends(SecurityController.obtener_usuario_actual),
+):
     return UsuariosRepository.find_all(db)
 
-@router.post("/cambiar_contrasenia/{idUser}")
-def cammbiar_contrasenia(idUser:int,request:CambiarContrasenia,db:Session=Depends(get_bd)):
-    try:
-        respuesta={}
-        new_contrasenia:str=request.new_contrasenia
-        confi_contrasenia:str=request.confir_contrasenia
-        userDB=db.query(Usuarios).where(Usuarios.id==idUser).first()
+@router.post("/cambiar_contrasenia")
+def cammbiar_contrasenia(
+    request: CambiarContrasenia,
+    db: Session = Depends(get_bd),
+    usuario_actual: Usuarios = Depends(SecurityController.obtener_usuario_actual)):
+   
 
-        if not userDB:
-            respuesta["mensaje"]="no se encontro el usuario"
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=respuesta)
-        if new_contrasenia == "" or not new_contrasenia:
-            respuesta["mensaje"]="hay algun error en la contraseña"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
-        if confi_contrasenia == "" or not confi_contrasenia:
-            respuesta["mensaje"]="hay algun error en confirmacion de la contraseña"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
-        if new_contrasenia != confi_contrasenia:
-            respuesta["mensaje"]="contraseñas no coinciden"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
-        userDB.contrasenia = new_contrasenia
+
+    if not SecurityController.verificar_contrasenia(
+        request.current_password, usuario_actual.contrasenia
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta",
+        )
+    if len(request.new_contrasenia.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La contraseña excede el límite admitido",
+        )
+
+    try:
+        usuario_actual.contrasenia = SecurityController.cifrar_contrasenia(
+            request.new_contrasenia
+        )
         db.commit()
-        db.refresh(userDB)
+        db.refresh(usuario_actual)
         return {"mensaje": "Contraseña cambiada exitosamente"}
     except Exception as err:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al actualizar la contraseña: {err}"
-        )
-    
+            detail="No se pudo actualizar la contraseña",
+        ) from err
 
-@router.post("/crear/usuario")
-def crear_usuario(request: CrearUsuario,db:Session=Depends(get_bd)):
-    respuesta={}
+@router.post("/crear/usuario", status_code=status.HTTP_201_CREATED)
+def crear_usuario(
+    request: CrearUsuario,
+    db: Session = Depends(get_bd),
+):
+    new_user = request.new_nombre.strip()
+    new_apellidos = request.new_apellidos.strip()
+    new_correo = request.new_correo.strip().lower()
+    new_contrasenia = request.new_contrasenia
+
+    if not new_user or not new_apellidos or not new_correo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nombre, apellidos y correo son obligatorios",
+        )
+    if request.confir_contrasenia != new_contrasenia:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Las contraseñas no coinciden",
+        )
+    if len(new_contrasenia.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La contraseña excede el límite admitido",
+        )
+
+    if db.query(Usuarios).filter(Usuarios.correo == new_correo).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se pudo crear el usuario con esos datos",
+        )
+
+    new_usuario = Usuarios(
+        nombres=new_user,
+        apellidos=new_apellidos,
+        correo=new_correo,
+        contrasenia=SecurityController.cifrar_contrasenia(new_contrasenia),
+    )
     try:
-        new_user=request.new_nombre
-        new_apellidos=request.new_apellidos
-        new_correo=request.new_correo
-        new_contrasenia=request.new_contrasenia
-        confir_contra=request.confir_contrasenia
-
-        user_db=db.query(Usuarios).filter(Usuarios.correo==new_correo).first()
-        
-
-        if user_db !=None:
-            respuesta["mensaje"]="el usuario ya existe en la base de datos"
-            raise HTTPException(status_code=status.HTTP_226_IM_USED,detail=respuesta)
-
-        if new_user=="":
-            respuesta["mensaje"]="Tiene que ingresar un nombre valido"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=respuesta)
-        if new_apellidos=="":
-            respuesta["mensaje"]="Tiene que ingresar apellidos validos"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=respuesta)
-        if new_correo=="":
-            respuesta["mensaje"]="Tiene que ingresar un correo valido"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=respuesta)
-        if new_contrasenia=="":
-            respuesta["mensaje"]="Tiene que ingresar una contraseña"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=respuesta)
-        if confir_contra=="" or new_contrasenia !=confir_contra:
-            respuesta["mensaje"]="Las contraseñas no coinciden"
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=respuesta)
-        
-        password_encriptada = SecurityController.cifrar_contrasenia(new_contrasenia)
-        new_usuario=Usuarios(
-            nombres=new_user,
-            apellidos=new_apellidos,
-            correo=new_correo,
-            contrasenia=password_encriptada 
-        )
         db.add(new_usuario)
         db.commit()
         db.refresh(new_usuario)
-        respuesta["mensaje"]="usuario creado exitosamente"
-
-        return HTTPException(status_code=status.HTTP_201_CREATED,detail=respuesta)
-        #return {"mensaje": "usuario creado exitosamente"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se pudo crear el usuario con esos datos",
+        ) from None
     except Exception as err:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al interno del servidor: {err}"
-        )
+            detail="No se pudo crear el usuario",
+        ) from err
 
-
-
-
-
-#@router.post("", response_model=ProductoResponseDTO, status_code=status.HTTP_201_CREATED)
-#def crear_producto(producto: ProductoCreateDTO, db: Session = Depends(get_db)):
-#    return ProductoRepository.save(db, producto)
+    return {"mensaje": "Usuario creado exitosamente", "id": new_usuario.id}

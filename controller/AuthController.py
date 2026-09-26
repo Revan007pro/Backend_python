@@ -1,46 +1,35 @@
 
-from fastapi import APIRouter,Depends,status,HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_bd
 from entities.usuarios import Usuarios
 from dto.LoginRequest import LoginRequest
-#from typing import List
+from controller.SecurityController import SecurityController
 
-router=APIRouter()
-class AuthController:
+router = APIRouter()
 
-    @router.post("/login/usuarios")
-    def ingresar_user(request:LoginRequest,db:Session=Depends(get_bd)):
-        try:
-            respuesta={}
-            nombres=request.nombre
-            contrasenia=request.password
+@router.post("/login/usuarios")
+def ingresar_user(request: LoginRequest, db: Session = Depends(get_bd)):
+    try:
+        correo = request.correo.strip().lower()
+        user_db = db.query(Usuarios).filter(Usuarios.correo == correo).first()
+        hash_db = user_db.contrasenia if user_db is not None else None
 
-            user_db = db.query(Usuarios).filter(Usuarios.nombres == nombres).first()
-
-            if not nombres and not contrasenia:
-                respuesta["mensaje"]="debe ingresar datos"
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=respuesta)
-
-            
-            if not user_db:
-                respuesta["mensaje"] = "Usuario no encontrado"
-                respuesta["Code"] = 6
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=respuesta)
-
-            if nombres and contrasenia:
-                respuesta["mensaje"]=f"Bienvenido al sistema {user_db.nombres}"
-                raise HTTPException(status_code=status.HTTP_200_OK, detail=respuesta)
-
-            #return{
-            #    "mensaje":f"bienvenido {user_db}",
-            #    "codigo":1
-            #}
-        except HTTPException as http_err:
-            raise http_err
-        except Exception as err:
+        if user_db is None or not SecurityController.verificar_contrasenia(
+            request.password, hash_db
+        ):
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail={"mensaje": f"Error interno del servidor: {str(err)}"}
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Correo o contraseña incorrectos",
+                headers={"WWW-Authenticate": "Bearer"},
             )
+
+        return {
+            "mensaje": f"Bienvenido al sistema {user_db.nombres}",
+            "Code": 1,
+            "access_token": SecurityController.crear_token_acceso(user_db.id,user_db.correo)
+            #"token_type": "bearer",
+        }
+    except Exception as err:
+        return {"error":f"error interno {err}"}
 

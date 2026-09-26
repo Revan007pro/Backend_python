@@ -7,5 +7,5 @@ class CrearUsuario(BaseModel):
     new_apellidos:str=Field(...)
     new_correo:str=Field(...)
     fecha_registro:Optional[datetime]=None
-    new_contrasenia:str=Field(...)
-    confir_contrasenia:str=Field(...)
+    new_contrasenia: str = Field(..., min_length=12, max_length=72)
+    confir_contrasenia: str = Field(..., min_length=12, max_length=72)

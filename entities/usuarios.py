@@ -8,9 +8,9 @@ class Usuarios(Base):
     id=Column(Integer(),primary_key=True,autoincrement=True)
     nombres=Column(String(50),nullable=False)
     apellidos=Column(String(50),nullable=True)
-    correo=Column(String(70),nullable=False)
+    correo=Column(String(70),nullable=False,unique=True)
     fecha_registro = Column(TIMESTAMP, server_default=func.now())
-    contrasenia=Column(String(50),nullable=False)
+    contrasenia=Column(String(60),nullable=False)
 
     
     #imagen= decidir despues donde va a ir las imagenes
